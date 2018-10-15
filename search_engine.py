@@ -1,13 +1,15 @@
 import argparse
 from helpers import sum_squared, tokenify, cos_similiarity
 from utils import read_file
-from math import log10, sqrt
+from math import log10, sqrt, log
 from operator import itemgetter
 
 def parse_args():
   ap = argparse.ArgumentParser()
   ap.add_argument("-d", "--documents", required=True, help="Path to the documents file")
   ap.add_argument("-k", "--keywords", required=True, help="Path to the keywords file")
+  ap.add_argument("-p", "--print_processed", default=False, help="Print processed docs and terms")
+  ap.add_argument("-s", "--stemmer", required=False, help="Type of stemmer to use")
 
   return vars(ap.parse_args())
 
@@ -44,12 +46,10 @@ def setup_database(documents_path, keywords_path):
 def calculate_bag_of_words(tokens, keywords):
   keywords_bag = keywords.copy()
 
-  # import code; code.interact(local=dict(globals(), **locals()))
   for token in tokens:
     if token in keywords.keys():
       keywords_bag[token] += 1
 
-  # import code; code.interact(local=dict(globals(), **locals()))
   return keywords_bag
 
 def calculate_tf(bag, keywords):
@@ -75,10 +75,14 @@ def calculate_idf(documents, keywords):
     word_count = 0
 
     for doc in documents:
-      if key in doc['tokens']:
+      if key in set(doc['tokens']):
         word_count += 1
 
-    idf[key] = word_count / document_count
+    try:
+      idf[key] = log10(document_count / word_count)
+
+    except (ValueError, ZeroDivisionError) as e:
+      idf[key] = 0
 
   return idf
 
@@ -128,16 +132,35 @@ def setup_documents_tfidf_matrix(tf_matrix, keywords, idf):
 def parse_query(input_text):
   return tokenify(input_text)
 
+def print_processed_docs_and_terms(documents, keywords):
+  print("Processed terms: \n")
+
+  for keyword in sorted(keywords.keys()):
+    print(keyword, end=' ')
+
+  print('\n\n')
+
+  for doc in documents:
+
+    print('Title: ', doc['title'], '\n')
+
+    for token in sorted(set(doc['tokens'])):
+      print(token, end=' ')
+
+    print('\n')
+
 def calculate_scores(documents_tfidf, query_tfidf, query_tfidf_len):
   scores = []
   for doc_tfidf in documents_tfidf:
-    scores.append({'idx': doc_tfidf['idx'], 'score': cos_similiarity(doc_tfidf['vector'], query_tfidf, doc_tfidf['vector_length'], query_tfidf_len)})
+    sim = cos_similiarity(list(doc_tfidf['vector'].values()), list(query_tfidf.values()))
+
+    scores.append({'idx': doc_tfidf['idx'], 'score': sim})
 
   return sorted(scores, key=itemgetter('score'), reverse=True)
 
 def print_result(scores, documents):
   for score in scores:
-    print("Score: {:.8f} . Document title: {}".format(score['score'], documents[score['idx']]['title']))
+    print("{} {:.8f}".format(documents[score['idx']]['title'].ljust(100), score['score']))
 
 def main(args):
   documents, keywords = setup_database(args['documents'], args['keywords'])
@@ -147,22 +170,25 @@ def main(args):
   idf = calculate_idf(documents, keywords)
   documents_tfidf = setup_documents_tfidf_matrix(tf_matrix, keywords, idf)
 
-  while True:
-    input_text = input("Please insert query here (type exit() to quit) ")
+  if args['print_processed']:
+    print_processed_docs_and_terms(documents, keywords)
+  else:
+    while True:
+      input_text = input("Please insert query here (type exit() to quit) ")
 
-    if input_text == 'exit()':
-      print("Closing the search engine...")
-      exit()
-    else:
-      query_tokens = parse_query(input_text)
-      query_bag_vector = calculate_bag_of_words(query_tokens, keywords)
+      if input_text == 'exit()':
+        print("Closing the search engine...")
+        exit()
+      else:
+        query_tokens = parse_query(input_text)
+        query_bag_vector = calculate_bag_of_words(query_tokens, keywords)
 
-      query_tf, query_tf_length = calculate_tf(query_bag_vector, keywords)
-      query_tfidf, query_tfidf_length = calculate_query_tf_idf(query_tf, keywords, idf)
+        query_tf, query_tf_length = calculate_tf(query_bag_vector, keywords)
+        query_tfidf, query_tfidf_length = calculate_query_tf_idf(query_tf, keywords, idf)
 
-      scores = calculate_scores(documents_tfidf, query_tfidf, query_tfidf_length)
+        scores = calculate_scores(documents_tfidf, query_tfidf, query_tfidf_length)
 
-      print_result(scores, documents)
+        print_result(scores, documents)
 
 if __name__ == '__main__':
   main(parse_args())
