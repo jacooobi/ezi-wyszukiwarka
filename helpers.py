@@ -1,26 +1,34 @@
 from nltk import word_tokenize
 from nltk.stem import PorterStemmer
+from porter_stemmer import MartinPorterStemmer
+from numpy import dot
+from numpy.linalg import norm
+
 from functools import reduce
 from math import sqrt
+import re
 
 def sum_squared(values):
     return reduce(lambda x, y: x + y, map(lambda x: x ** 2, list(values)))
 
 def tokenify(text):
-    stemmer = PorterStemmer()
+    text = re.sub(r"[^A-Za-z0-9]", " ", text)
     words = word_tokenize(text)
-    words = [word for word in words if word.isalpha()]
-    tokens = [stemmer.stem(word) for word in words]
+    words = [word.lower() for word in words]
+    # words = [word for word in words if word.isalpha()]
+    tokens = stem_martin(words)
+    # tokens = stem_nltk(words)
 
     return tokens
 
-def cos_similiarity(a, b, a_length, b_length):
-  ab_sum = 0
+def stem_martin(words):
+  stemmer = MartinPorterStemmer()
+  return [stemmer.stem(word, 0,len(word)-1) for word in words]
 
-  for key in a.keys():
-    ab_sum += a[key]*b[key]
 
-  try:
-    return ab_sum / a_length * b_length
-  except ZeroDivisionError:
-    return 0.0
+def stem_nltk(words):
+  stemmer = PorterStemmer()
+  return [stemmer.stem(word) for word in words]
+
+def cos_similiarity(a, b):
+  return dot(a, b) / (norm(a)*norm(b))
