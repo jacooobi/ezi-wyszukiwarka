@@ -31,4 +31,8 @@ def stem_nltk(words):
   return [stemmer.stem(word) for word in words]
 
 def cos_similiarity(a, b):
-  return dot(a, b) / (norm(a)*norm(b))
+  norm_ab = (norm(a)*norm(b))
+  if norm_ab == 0:
+    return 0
+  else:
+    return dot(a, b) / norm_ab
