@@ -4,6 +4,7 @@ from utils import read_file
 from math import log10, sqrt, log
 from operator import itemgetter
 
+
 def parse_args():
   ap = argparse.ArgumentParser()
   ap.add_argument("-d", "--documents", required=True, help="Path to the documents file")
@@ -162,6 +163,61 @@ def print_result(scores, documents):
   for score in scores:
     print("{} {:.8f}".format(documents[score['idx']]['title'].ljust(100), score['score']))
 
+def print_candidate_set(scores, documents, size):
+  for i, score in enumerate(scores):
+    if i >= size:
+      return
+    print("{}: {}".format(scores[i]['idx'], documents[score['idx']]['title'].ljust(100)))
+
+
+def get_top_ids(scores, n = 5):
+  top_ids = []
+
+  for i, doc in enumerate(scores):
+    if i >= n:
+      return top_ids
+    top_ids.append(str(doc['idx']))
+
+def split_user_feedback(user_ranking, documents, scores, keywords):
+  relevant_vector = keywords.copy()
+  non_relevant_vector = keywords.copy()
+
+  relevant = user_ranking.split(' ')
+  non_relevant = list(set(get_top_ids(scores, 5)).difference(set(relevant)))
+
+  for i in relevant:
+    for word in documents[int(i)]['tokens']:
+      if word in keywords.keys():
+        relevant_vector[word] += 1
+
+  for i in non_relevant:
+    for word in documents[int(i)]['tokens']:
+      if word in keywords.keys():
+        non_relevant_vector[word] += 1
+
+  return relevant_vector, non_relevant_vector
+
+def calculate_new_query(initial_query, relevant_keys, non_relevant_keys):
+  beta = 0.75
+  alpha = 1
+  gamma = 0.25
+
+  final_query = initial_query.copy()
+
+  for word in final_query.keys():
+    score = alpha*initial_query[word] + beta*relevant_keys[word] - gamma*non_relevant_keys[word]
+    if score < 0:
+      final_query[word] = 0
+    else:
+      final_query[word] = score
+
+  return final_query
+
+def print_updated_query(final_query):
+  for key in final_query.keys():
+    if final_query[key] > 0:
+      print("{}: {}".format(key, final_query[key]))
+
 def main(args):
   documents, keywords = setup_database(args['documents'], args['keywords'])
 
@@ -179,16 +235,32 @@ def main(args):
       if input_text == 'exit()':
         print("Closing the search engine...")
         exit()
-      else:
-        query_tokens = parse_query(input_text)
-        query_bag_vector = calculate_bag_of_words(query_tokens, keywords)
 
-        query_tf, query_tf_length = calculate_tf(query_bag_vector, keywords)
-        query_tfidf, query_tfidf_length = calculate_query_tf_idf(query_tf, keywords, idf)
+      query_tokens = parse_query(input_text)
+      query_bag_vector = calculate_bag_of_words(query_tokens, keywords)
 
-        scores = calculate_scores(documents_tfidf, query_tfidf, query_tfidf_length)
+      query_tf, query_tf_length = calculate_tf(query_bag_vector, keywords)
+      query_tfidf, query_tfidf_length = calculate_query_tf_idf(query_tf, keywords, idf)
 
-        print_result(scores, documents)
+      scores = calculate_scores(documents_tfidf, query_tfidf, query_tfidf_length)
+
+      print_candidate_set(scores, documents, 5);
+
+      user_ranking = input("Which of the documents are relevant? Use indexes listed above (e.g. 5 10 15) ")
+
+      relevant_vector, non_relevant_vector = split_user_feedback(user_ranking, documents, scores, keywords)
+
+      final_query = calculate_new_query(query_bag_vector, relevant_vector, non_relevant_vector)
+
+      query_tf, query_tf_length = calculate_tf(final_query, keywords)
+      query_tfidf, query_tfidf_length = calculate_query_tf_idf(query_tf, keywords, idf)
+
+      scores = calculate_scores(documents_tfidf, query_tfidf, query_tfidf_length)
+
+      print("Congratulations. Your Search results are presented below!\n")
+      print_result(scores, documents)
+      print_updated_query(final_query)
+
 
 if __name__ == '__main__':
   main(parse_args())
